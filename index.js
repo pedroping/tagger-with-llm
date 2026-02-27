@@ -126,208 +126,422 @@ async function tagArticleWithChunking() {
     { device: "gpu" },
   );
 
-  const title = `
-    Encryption/Decryption Stream on Demand — NodeJS approach
-    The right way to encrypt your huge data on demand, with no memory leaks and no hardware impacts!
-    For you that is new here, we are beginning a new series of articles, following the NodeJS approach.
+  const title = `How Angular Dependency Injection works under the hood
+Thomas Laforge
+Thomas Laforge
 
-In my last article, I wrote about NodeJS streams and their impact on machine hardware. I created many and many cases to show how we could handle the same scenario — which was write one million logs in a file — with:
+Follow
+11 min read
+·
+Nov 16, 2023
+480
 
-Callbacks
-Asynchronous code and fs/promises module
-Synchronous code and fs module
-Streams with memory leaks
-Streams without memory leaks
-The article is available and I recommend that you read it before we start here:
 
-Writable Streams in NodeJs— Hardware Impact Analysis
-The most efficient way to transfer data between one point in the system and another, using little random access memory…
-victorfjansen.com
+8
 
-A friendly advice:
-In the article that I mentioned here, I wrote about buffers, binaries, hexadecimal numbers, how NodeJs handle these objects in Streams, and also about memory allocation in NodeJS.
 
-Please, to not be lost here, read the article.
 
-A little introduction about Readable, Duplex, and Transform streams
-If you are familiar with Streams, you should know this representation:
+
 
 Press enter or click to view image in full size
 
-Some obvious annotations:
+Dependency Injection (DI) is one of the most beloved and powerful features of Angular, and it happens to be my personal favorite as well. Understanding and mastering it can elevate your Angular skills and grant you superpowers.
 
-Streams have internal Buffer objects to handle data (or chunks).
-Streams are EventEmitters (subject that we already talked about in our previous article), and communicate by observing events as “data”. You can observe this behavior by seeing the last arrow getting out from the buffer representation.
-Streams do not have necessarily 16834 bytes. It can have as many bytes as we want, it just simply changes the “highWaterMark” property.
-So, unlike the Writable Streams, now we are reading from some source by separating the source into chunks. That's the principle.
+In this article, I will explain what Dependency Injection is and delve into how it operates within Angular to provide a profound understanding.
 
-And how we can implement a readable stream to read one million numbers, for example? See:
+What is a Dependency Injection
+Let’s start by examining an example that doesn’t use Dependency Injection:
+
+@Component({
+   //...
+})
+export class AppComponent {
+  service = new RootService();
+}
+In this example, we directly instantiate the RootService using the new keyword, resulting in a hardcoded dependency and a tight coupling between AppComponent and RootService. While this approach does work, it lacks flexibility, testability, and scalability in the long run, making it less maintainable.
+
+Now, let’s consider the same example using Dependency Injection, where you’ll recognise a well-known Angular code snippet:
+
+@Component({
+   //...
+})
+export class AppComponent {
+  service = inject(RootService);
+// constructor(private service: RootService) {}
+}
+Notes: you can use either the constructor or the inject function, as both methods have the same underlying implementation.
+
+As we can see, AppComponent is no longer directly responsible for instantiating RootService. Instead, it delegates this task to an external source, which is responsible for either returning an existing instance or creating a new instance of the requested service.
+
+We can simplify the code for this external source, which might look like this:
 
 
-Please note:
+export const inject = (searchClass: Class) => {
+  const dependance = find(searchClass)
+  if(dependance) {
+    return dependance;
+  } else {
+    return new searchClass();
+  }
+}
+In this example, AppComponent doesn’t need to have knowledge about RootService. This reduces the coupling between classes and their dependencies, making the code more maintainable, testable, and reusable.
 
-We’re using writable streams to copy another file with one million rows — each row has 1 number — and I built this file with the code of the last article — it just took 200ms to build.
-The read stream uses the event “data” to get each chunk — one for time — and write it at our write stream.
-The read stream can be paused and resumed just by using simple commands. The idea is that when buffers get filled, the write stream stops and just resumes at the “drain” event — which is the event charged with emptying the buffer.
-This process took just 14ms to complete:
+In Angular, this external source is referred to as an Injector. And its implementation can be compared to a dictionary of records. The structure of a record looks like this:
+
+record:{
+ //...
+ [index]:{
+   key: class RootService,
+   value: {
+    factory: ƒ RootService_Factory(t),
+    value: {}
+   }
+ //...
+}
+The Injector stores information about all injectable classes, which includes anything with a decorator such as @Injectable, @Component, @Pipe, and @Directive.
+
+Returning to the previous example, when AppComponent requests RootService, the Injector iterates over its records to locate the requested token. Once found, the Injector returns the value if it's not undefined, indicating that the service has already been instantiated. Otherwise, the Injector creates a new instance using the factory function.
+
+As you can observe, the record is simply an object, and the value can be easily overridden. For example, if we write the following code:
+
+@Component({
+   //...
+   providers: [{ provide: RootService, useClass: OtherService }]
+})
+export class AppComponent {
+  service = inject(RootService);
+}
+The Injector will override the value property within the RootService record:
+
+record:{
+ //...
+ [index]:{
+   key: class RootService,
+   value: {
+    factory: ƒ OtherService_Factory(t),
+    value: {}
+   }
+ //...
+}
+This means that when AppComponent requests RootService, the Injector will provide a new instance of OtherService.
+
+Note: This example simplifies how Angular’s Dependency Injection works, but it illustrates the underlying DI principle.
+
+The next section delves into more advanced aspects, revealing the inner workings of Angular’s DI system.
+
+Angular Dependency Injection
+Angular has two categories of Injectors:
+
+EnvironmentInjector: This category includes all global injectable classes provided through the router, modules, or using the providedIn: 'root' keyword.
+NodeInjector: This category contains all local injectable classes found in each component or template.
+It’s important to note that each small piece of a view containing injectable classes (referred to as LView) has its own NodeInjector, and within this NodeInjector, we can locate all services provided within the component provider array or any directives used within that LView.
+
+LView !== Component
+
+Creation of EnvironmentInjector Tree
+When we bootstrap the application, the bootstrapApplication function is called in our main.ts file. This function takes two parameters:
+
+The root Component
+A list of providers
+bootstrapApplication(AppComponent, {
+  providers: [GlobalService],
+})
+Under the hood, this function will create three EnvironmentInjectors chained together:
+
+NullInjector: This is the end of the road. Its sole purpose is to throw an error: “NullInjectorError: No provider for …!!!”
+PlatformInjector: It contains a list of tokens that inform Angular about the platform the application is running on, such as browser, server, web worker, etc.
+Example: this is where the InjectionToken DOCUMENT is created. For instance, if you are on a browser, this token will return window.document, whereas on a server, Angular will build and provide a DOM using Domino. It's crucial to always work with the DOCUMENT token by injecting it instead of using window.document. This ensures compatibility if you ever need to render your application from a server.
+
+import { DOCUMENT } from '@angular/common';
+
+@Component()
+export class FooComponent {
+  document = inject(DOCUMENT) // ✅
+  document = window.document // ❌
+}
+RootInjector: This is the most well-known of the three. It’s where all our global services (injectables set as root) are stored.
+Notes: If we refer back to the earlier example, the GlobalService instance will be located within this injector.
+
+All three of these injectors are chained together.
+
+Creation of NodeInjector Tree
+In this section, we will explore examples that you likely encounter in your daily projects. The first part aims to provide a better understanding of how the NodeInjector tree is created. (The NodeInjectorTree is similar to the ComponentTree but not strictly identical.)
+
+We will then see how Angular determines which dependencies to retrieve or create.
+
+Note: In this article, we will not discuss modules since most applications are expected to transition to standalone. Furthermore, all new Angular applications will be set to standalone by default starting from v17.
+
+Tree Creation
+
+Let’s examine what a NodeInjectorTree looks like. We’ll begin with a very simple example: a Parent with one Child.
+
+@Component({
+  template: '<child />',
+  imports: [ChildComponent],
+})
+export class ParentComponent {}
+
+@Component({})
+export class ChildComponent {}
+This results in the following tree:
+
+
+Since ParentComponent and ChildComponent are annotated with @Component, it means they are injectable. Thus, each component is stored within its own NodeInjector as follows. It's important to note that ChildComponent can inject ParentComponent, but it cannot inject itself, as this would create a circular dependency.
+
+
+Now, let’s add another child to the parent:
+
+@Component({
+  template: '
+    <child />
+    <child />
+   ',
+  imports: [ChildComponent],
+})
+export class ParentComponent {}
+
+@Component({})
+export class ChildComponent {}
+The structure of both trees remains similar.
 
 Press enter or click to view image in full size
 
-Ok, now that we know how to manage the events at writable stream and readable stream, we can see the Duplex and Transform streams.
+However, let’s see what happens when we encapsulate one child into a div with a directive on it.
 
-Duplex and Transform streams, how do they differ from each other?
-Essentially, Duplex Streams are one Readable Stream with another Writable Stream.
+@Directive({
+  selector: '[foo]',
+  standalone: true,
+})
+export class FooDirective {}
 
-They have the same behavior as we saw previously, and a Duplex Stream can be used instead of creating two different streams.
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [ChildComponent, FooDirective],
+  template: '
+    <div foo>
+      <child />
+    </div>
+    <child />
+  ',
+})
+export class ParentComponent {}
 
-Press enter or click to view image in full size
+Now the InjectorTree begins to diverge from the ComponentTree. A new Injector has appeared. Since FooDirective is a type of @Directive, it means it's injectable, and the first ChildComponent can inject it.
 
-And about the Transform Stream?
+Write on Medium
+From this example, we can see that a NodeInjector is not associated with a Component but with an LView (Logical View).
 
-Let’s suppose that we want to transform our data while using streams. What we can do? We can use a Duplex stream passing data to each internal buffer. In theory, we can just connect the data leaving from the Write Stream to the entrance of the Readable Stream, and transform the data while the chunks are flowing between them.
+With these three examples, you have all you need to understand how the InjectorTree is built.
 
-By doing this, we have our Transform Stream. It’s just it!
+(Note: Routing and ActivatedRoute will be explained in a follow-up article.)
 
-Press enter or click to view image in full size
+Now, let’s explore different ways of providing an injectable service and how Angular locates the instance you are injecting.
 
-Great, now that we know the theory, we can start coding something.
+Component provider
+Within the component decorator, you have a property called providers that allows you to provide an Injectable class, as illustrated below:
 
-I thought about writing code in each way — writing at first one writable, and then readable, and the duplex/transform — but for educational purposes I will just exemplify with duplex before writing our encrypt/decrypt with transform.
+@Component({
+  template: '...',
+  providers: [MyComponentService],
+})
+export class MyComponent {}
+The service provided inside the decorator will be stored within the records of the NodeInjector of MyComponent. Please note that providing your service does not instantiate it. A service is instantiated only when it is injected.
 
-Duplex Stream from scratch
-Our first step will be to declare our Stream structure. As a helper to our implementation, we will extend our main class with DuplexStream from the “streams” package.
+Let’s now examine which instance is returned with two concrete examples:
 
-So we got:
+Example 1:
 
+@Component({
+  template: '
+    <child />
+    <child />
+   ',
+  imports: [ChildComponent],
+})
+export class ParentComponent {}
 
-Now, we should get some properties to initialize our class. For our implementation, we will define the readFilename, the writeFilename, writableHighWaterMark, and the readableHighWaterMark.
-
-As the name suggests, the “waterMark” properties will be used to define the Buffer’s size of our internal Buffers — as we saw in the last article.
-
-Our constructor:
-
-
-Please note:
-
-The readableHighWaterMark and the writableHighWaterMark are used at super function. As we are extending from the Duplex class, we can set these properties natively.
-For the file names, we’re creating new properties to store them.
-But it’s not only this. How we’re doing our implementation, we need to control the internal chunks and their size.
-
-So, if the buffer reads a chunk, and then reads another chunk, our “chunkSize” property will be of size two. And the current chunk will be the second one.
-
-Remember that we’re dealing with streams, so we can’t store all buffers and need to count every chunk that we read.
-
-Our final constructor will be something like this:
-
-
-Ok, to the next step, we need to declare another constructor. But how? Javascript Classes only allow one constructor.
-
-For streams, we have a method called “_constructor()”. This is our second constructor. It’s called right after the original constructor function.
-
-Download the Medium app
-In this function, we should mount our files and open each source to read and write.
-
-
-Please note:
-
-At this function, we have a callback parameter which is a function.
-This callback function is responsible for proceeding with the stream flow or notifying the stream that has some error in our implementation — you can call callback(err) or just callback().
-We’re getting a parameter terminated in “Fd” which means “file descriptor”. File descriptors are the identification of files in our environment. Node uses file descriptors to refer to files in the context of the “fs” module.
-So basically, we’re opening the files that we have declared, and, if some error happens, the stream will be notified about it.
-
-Our next step will be to implement the write function. As we saw, we have a write buffer inside of the stream and we should use it to manage the flowing chunks.
-
-
-Please note:
-
-We’re only using the chunk and callback parameters. The encoding parameter refers to the encoding used in the buffer ( as utf8, ascii, etc..)
-First, we push our current chunk to the chunk property and add the current chunk size to the chunk size property.
-We verify if the current chunk size is higher than our writableHighWaterMark. If yes, this means that our buffer are filled and need to be emptied. So we write to the file, concatenating the existing buffers, verifying if there are no errors, resetting chunk properties, and calling the callback function to proceed with stream flow.
-If not, we just proceed to push the chunk property and call the callback function, waiting for the chunk size to be higher than the writableHighWaterMark.
-Great! Now we already did our write function and need to write our read function, so let’s see how it could be:
-
-
-Note:
-
-We’re receiving size as a parameter from the read function, and creating a new Buffer to allocate the correct size.
-We’re reading from the reading descriptor (the file that we declared to read) and passing a lot of parameters. These parameters are the file descriptor, the buffer that stores the data fetched from the file, the offset position (initial position from where to start writing), the length of total data, the position of where to start reading, and the callback with error and bytes read quantity.
-We’re pushing the data for the Readable Buffer.
-Not the last, but not the least, the _final function. The _final function is responsible for flushing the last chunk and writing the last time in the Buffer. It’s a simple implementation, but it’s important for the stream lifecycle.
-
-
-Note:
-
-We receive a callback function as every function receives.
-We’re resetting the chunks and cleaning our Stream.
-Our callback is called at the end, indicating that our implementation has been finished.
-And now, the least (I promise lol), is the _destroy function. The _destroy function is responsible for the destruction of the stram. It will be executed when:
-
-The user (or your code) explicitly calls stream.destroy().
-The stream encounters an unrecoverable error internally.
-The stream is being forcibly closed for some other reason (e.g., process shutdown).
-You can handle it in many ways, but for us, I will just ignore it and proceed with the end of the cycle.
-
-
-Great! And now that we have finished our custom stream implementation? We can use it to write and read data! See:
-
-
-Now, if we create a file called “read.txt” and put some string content into it, we will see at the terminal:
+@Component({
+  providers: [MyService]
+})
+export class ChildComponent {
+  myService = inject(MyService);
+}
+This results in the following NodeInjectorTree:
 
 Press enter or click to view image in full size
 
-In your created file called “write.txt”, you will see:
+As we can see, MyService is present inside both ChildInjectors. When Angular creates the first ChildComponent class, it will request MyService from the DI system. The DI system will start by searching inside the record of ChildInjector, which looks like this:
+
+record:{
+ //...
+ [index]:{
+   key: class MyService,
+   value: {
+    factory: ƒ MyService_Factory(t),
+    value: undefined
+   }
+ //...
+}
+Angular will iterate over all dictionary entries of the Injector to check if the key MyService is present. Since MyService is present inside this NodeInjector, it will then check if it has already been instantiated, which is not the case since the value is undefined. In this case, a new instance of MyService will be created and returned.
+
+If the key wasn’t present inside the record, the DI system will move to the next Injector until finding it or reaching the NullInjector, which will throw an error and terminate the application.
+
+The same process will repeat for the second instance of ChildComponent. Angular will start searching inside its own NodeInjector, find the key inside the record, and since MyService has not been instantiated, a new instance will be created.
+
+Example 2:
+
+Now, let’s provide MyService inside ParentComponent instead of inside ChildComponent.
+
+@Component({
+  providers: [MyService]
+  template: '
+    <child />
+    <child />
+   ',
+  imports: [ChildComponent],
+})
+export class ParentComponent {}
+
+@Component({})
+export class ChildComponent {
+  myService = inject(MyService);
+}
+Now, MyService is located inside the record of ParentInjector.
 
 Press enter or click to view image in full size
 
-It’s not well formatted, but it’s ok!
+This time, when Angular creates the first ChildComponent, it won't find the key of MyService inside the record of ChildInjector. Angular will then move up to the next Injector, which is ParentInjector. The record of ParentInjector looks like this:
 
-Now, we know how the process of a duplex stream works, and how to create a custom stream (consider this process the same as creating a readable or writable stream), and we know how to use it in both ways — writing and reading.
+record:{
+ //...
+ [index]:{
+   key: class MyService,
+   value: {
+    factory: ƒ MyService_Factory(t),
+    value: undefined
+   }
+ //...
+}
+Since MyService has not been instantiated yet, a new instance will be created and returned.
 
-Finally, Encryption and Decryption Stream!
-To be honest, maybe the Encryption and Decryption stream could be a disappointment to you. It’s easy to implement them haha.
+However, things are different when the second ChildComponent is created. Angular will traverse the NodeInjectorTree until reaching ParentInjector. But this time, the ParentInjector looks like this:
 
-All processes are made by the Transform Stream class, and as we saw, we would extend the Transform class in our Encrypt/Decrypt stream.
+record:{
+ //...
+ [index]:{
+   key: class MyService,
+   value: {
+    factory: ƒ MyService_Factory(t),
+    value: MyService {
+      prop1: 'xxx'
+      // ...
+    }
+   }
+ //...
+}
+The value of MyService is no longer undefined. The DI System will return this instance to the second ChildComponent. This means that both ChildComponents are sharing the same instance of MyService, unlike in the previous example.
 
-But see, we have some advantages here:
+Note: If ParentComponent was injecting MyService, the same instance would be shared among all three components.
 
-It’s easy to implement
-We are encrypting it on demand. So our hardware impacts are minimal and you can encrypt a huge content!
-Let’s see how we can do it. For the Encrypt Stream:
+ProvidedIn: ‘root’
+The providedIn: 'root' is one of the most commonly used injectable designs within Angular applications, but not everyone fully understands the implications of these two words. This chapter aims to provide a clear explanation.
 
+Let’s create a very basic application with a parent and a child:
 
-Note:
+@Component({
+  template: '<child />',
+  imports: [ChildComponent],
+})
+export class ParentComponent {}
 
-We’re using only the _transform function. This function is responsible for transforming the data and passing it from a writable stream to a readable stream.
-For our “Encryption” — never use this type of encryption. It’s only for educational purposes. If you implement this encryption, easily a hacker can discover and get the decrypted data — we’re using the principle of every time adding one to the Buffer position.
+@Component({})
+export class ChildComponent {
+  service = inject(RootService);
+}
 
-So if we have a buffer: Buffer<0x01, 0x02, 0x03>, our “encryption” will return a Buffer with: Buffer<0x02, 0x03, 0x04>. Consequently, when we’re using the utf8 decoder, they will interpret as another character.
-
-Usage notes:
-
-
-And now, the Decrypt Stream implementation:
-
-
-Note:
-
-It’s the pretty same thing as the Encrypt Stream, but instead of sum, we’re decreasing in each Buffer position.
-And the usage:
+@Injectable({ providedIn: 'root' })
+export class RootService {}
+When we examine the NodeInjectorTree, we find that RootService is not present in any of the records. This is because Angular does not include it in any Injector until a component actually injects it.
 
 
-Conclusion
-If you’ve read this far — and also read the article I mentioned in the first section — I’m sure you understand the implementation.
-As I always say, my goal here is never to get to the point but rather to explore the possibilities and how to do things from scratch.
+Note: In the context of lazy-loaded routes, RootService may get tree-shaken and bundled outside the main bundle. This topic is beyond the scope of this article, but you can read more about it below.
 
-Given our understanding gained from these articles, it is certainly now possible for you to discover more and more about worry-free streams.
+Mastering Injectable Services: A Comprehensive Guide
+learn how to use @Injectable decorator the correct way.
+itnext.io
 
-Understand pipelines, async generators in streams, and much more.
+When Angular creates ChildComponent, it searches for RootService starting from the ChildInjector and moving up the tree, eventually reaching the EnvironmentInjectorTree and more precisely, the RootInjector.
 
-I strongly recommend Erick Wendel’s content about streams.
+Note: The exact implementation is more complex, but for the sake of simplicity, we’ll provide a high-level explanation here.
 
-In the future, I will talk about networks and how we can create implementations such as TCP and UDP in our applications from scratch, using streams and without external libraries.
-  `;
+When the DI system reaches the RootInjector, it searches for the RootService key, similar to any other NodeInjector. However, it doesn't find it there either. Unlike NodeInjectors, before moving to the next EnvironmentInjector, it compares the scope of the Injector with the scope of the service being injected.
 
-  const chunks = chunkText(title.toLocaleLowerCase(), 650);
+The code below is a portion of the get function of the RootInjector: (If you want to see the full function, you can go here)
+
+let record: Record<T>|undefined|null = this.records.get(token);
+if (record === undefined) {
+  // No record, but maybe the token is scoped to this injector. Look for an injectable
+  // def with a scope matching this injector.
+  const def = couldBeInjectableType(token) && getInjectableDef(token);
+  if (def && this.injectableDefInScope(def)) {
+    // Found an injectable def and it's scoped to this injector. Pretend as if it was here
+    // all along.
+    record = makeRecord(injectableDefOrInjectorDefFactory(token), NOT_YET);
+  } else {
+    record = null;
+  }
+  this.records.set(token, record);
+}
+First, it attempts to retrieve the record of the searched token. If there is no record, it checks if the service has an InjectableDef (the providedIn property). If the service has one and if the scope matches the scope of the current EnvironmentInjector (root in our case), a new record is created and added to the Injector, then a new instance is returned.
+
+The next time a component requests RootService, the record will be present, and the same instance will be returned.
+
+Note: While less common, if you want to provide your service inside the PlatformInjector, you can set your Injectable to providedIn: 'platform'.
+
+Warning: In practice, setting the providedIn: 'root' property for your Injectable service signifies that your service will be a singleton. However, if you provide your service within the providers property of one of your components, this service will be added to the record of the NodeInjector of that component. Let's see an example to better understand this:
+
+@Component({})
+export class ChildComponent {
+  service = inject(RootService);
+}
+
+@Component({
+  providers: [RootService]
+})
+export class FooComponent {
+  service = inject(RootService);
+}
+
+@Component({
+  template: '
+    <child />
+    <foo />
+  ',
+  imports: [ChildComponent, FooComponent],
+})
+export class ParentComponent {}
+
+// injectable service
+@Injectable({ providedIn: 'root' })
+export class RootService {}
+Here, we have a providedIn: 'root' RootService, which is injected inside both FooComponent and ChildComponent. However, we provide RootService inside the NodeInjector of FooComponent. This gives us the following graph:
+
+Press enter or click to view image in full size
+
+ChildComponent will have an instance of the service located inside the RootInjector, whereas FooComponent will have the one from its own Injector. This can be misleading because by observing the service, one might assume that both components share the same global instance, which is not the case in this example.
+
+In summary, providedIn: 'root' is only information for Angular to create a record inside RootInjector and only if the service reaches that point while searching for it inside the InjectorTree.
+
+I really hope that the Dependency Injection System of Angular will no longer hold any secrets for you. You should now be able to harness its power to create exceptional applications and understand whether an instance of a service will be shared or unique.
+
+You can expect me to write follow-up articles on the following subjects:
+
+Dependency Injection inside Routed Components
+Injection Flags: Host, Self, SkipSelf, and Optional
+All the options for overriding within the DI: useClass, useValue, useFactory, useExisting`;
+
+  const chunks = chunkText(title.toLocaleLowerCase().trim(), 250);
   console.log(`\nOriginal text split into ${chunks.length} chunks.`);
 
   const scoreTotals = {};
@@ -336,7 +550,7 @@ In the future, I will talk about networks and how we can create implementations 
 
   const options = {
     multi_label: false,
-    hypothesis_template: "The topic of this article is [].",
+    hypothesis_template: "The topic of this article is {}.",
   };
 
   console.log("\nAnalyzing chunks...");
